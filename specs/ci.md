@@ -1,6 +1,6 @@
 # esprec — CI requirements
 
-**Rev 0.1 · July 2026**
+**Rev 0.2 · July 2026**
 
 Continuous integration is **required**, not optional polish. esprec must prove itself the way [Silico](https://github.com/tig/silico) dictates for host-side truth: **named gates**, **host-first**, and **CI that means something** about the firmware path — not “it built on my desk.”
 
@@ -45,9 +45,11 @@ Jobs run in this **order of dependency**. Later stages must not be the only proo
 Proves pure host logic and any host-side doubles:
 
 - Protocol encode/decode, resync, CRC / framing contracts
-- Pixel format conversion
+- **Truncation / wrong-length payloads fail closed** (a partial stream must not yield a silent “valid” image)
+- **Metadata-bound integrity** — mutated width/height/format/packing with unchanged pixel bytes (and a pixels-only checksum that would still match) must fail closed; see product [spec.md](spec.md) §6.1
+- Pixel format conversion (including documented RGB565-class endian/swap cases)
 - PNG snapshot encode path
-- GIF multi-frame encode path
+- GIF multi-frame encode path (keyframe sequence and continuous-style frame lists)
 - CLI / library surface that can run against an **in-process or pipe** fake device
 - Any portable C host tests if the firmware component shares codec logic with the host
 
@@ -64,7 +66,7 @@ Proves the **on-device path** without metal:
 1. Build a **canonical ESP-IDF (or agreed) example** that links the esprec component and draws a **known** test pattern (or LVGL fixture) into a capturable buffer.
 2. Run that binary under [**tobozo/esp32-qemu-sim**](https://github.com/tobozo/esp32-qemu-sim) (Espressif QEMU) on a supported chip class (`esp32` / `esp32s3` / `esp32c3` as chosen for the example).
 3. Drive capture from the **host side of CI** against the QEMU serial log/path the action exposes (or an equivalent documented serial attachment).
-4. Assert a **successful capture pipeline**: host receives a valid frame, writes PNG (and optionally a short GIF), and image properties match the fixture (dimensions at minimum; golden or structural checks preferred over “file exists”).
+4. Assert a **successful capture pipeline**: host receives a valid frame (header + integrity over metadata and raster + length), writes PNG (and optionally a short GIF), and image properties match the fixture (dimensions and packing at minimum; golden or structural checks preferred over “file exists”). A zero-byte, truncated, or metadata-tampered payload must fail the job.
 
 **Gate name (conceptual):** `qemu` / “QEMU sim gate.”
 
