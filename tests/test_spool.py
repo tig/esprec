@@ -61,3 +61,71 @@ def test_grab_spool_three_frames(tmp_path: Path):
     assert frames[0][0].seq == 0
     assert frames[1][0].ts_ms == 1200
     assert frames[2][0].w == 8
+
+
+def test_spool_to_gif_requires_begin_ack():
+    """Missing ok rec begin must fail closed (not sleep into a false session)."""
+    import pytest
+
+    from esprec.capture import spool_to_gif
+    from esprec.protocol import ProtocolError
+
+    class Silent:
+        def write(self, data: bytes) -> int:
+            return len(data)
+
+        def readline(self) -> bytes:
+            return b""
+
+        def read(self, n: int) -> bytes:
+            return b""
+
+        def reset_input_buffer(self) -> None:
+            pass
+
+        def flush(self) -> None:
+            pass
+
+    with pytest.raises(ProtocolError, match="ok rec begin"):
+        spool_to_gif(Silent(), Path("/tmp/nope.gif"), duration_s=0.2, hz=2, settle_s=0)
+
+
+def test_spool_command_includes_max_frames():
+    """Host must send max_frames so the device hard-caps the session."""
+    from esprec.capture import spool_to_gif
+    from esprec.protocol import ProtocolError
+
+    written: list[bytes] = []
+
+    class CaptureCmd:
+        def write(self, data: bytes) -> int:
+            written.append(data)
+            return len(data)
+
+        def readline(self) -> bytes:
+            return b""
+
+        def read(self, n: int) -> bytes:
+            return b""
+
+        def reset_input_buffer(self) -> None:
+            pass
+
+        def flush(self) -> None:
+            pass
+
+    try:
+        spool_to_gif(
+            CaptureCmd(),
+            Path("/tmp/nope.gif"),
+            duration_s=2.0,
+            hz=5.0,
+            max_frames=7,
+            settle_s=0,
+        )
+    except ProtocolError:
+        pass
+    assert written, "expected rec start command"
+    cmd = written[0].decode()
+    assert "esprec rec start" in cmd
+    assert "7" in cmd.split()  # max_frames token

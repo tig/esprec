@@ -137,41 +137,37 @@ def spool_to_gif(
     if settle_s > 0:
         time.sleep(settle_s)
 
-    # start recording on device
-    cmd = f"esprec rec start {hz:g} {duration_s:g}\n"
+    def _wait_ack(prefix: str, timeout: float = 5.0) -> str:
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            line = port.readline()
+            if not line:
+                continue
+            text = line.decode("utf-8", errors="replace").strip()
+            if text.startswith("ESPREC1_ERR") or text.startswith("err"):
+                raise ProtocolError(text)
+            if text.startswith(prefix):
+                return text
+        raise ProtocolError(f"timeout waiting for {prefix!r}")
+
+    # start: hz sec [max_frames] — max is a hard device cap
+    cmd = f"esprec rec start {hz:g} {duration_s:g} {max_frames}\n"
     port.reset_input_buffer()
     port.write(cmd.encode())
     port.flush()
+    _wait_ack("ok rec begin")
 
-    # wait for ok + recording window (+ small margin for last sample)
-    deadline = time.monotonic() + 5.0
-    while time.monotonic() < deadline:
-        line = port.readline()
-        if not line:
-            continue
-        text = line.decode("utf-8", errors="replace").strip()
-        if text.startswith("ok rec begin"):
-            break
-        if text.startswith("ESPREC1_ERR"):
-            raise ProtocolError(text)
     time.sleep(duration_s + 0.35)
 
     port.write(b"esprec rec stop\n")
     port.flush()
-    deadline = time.monotonic() + 5.0
-    while time.monotonic() < deadline:
-        line = port.readline()
-        if not line:
-            continue
-        text = line.decode("utf-8", errors="replace").strip()
-        if text.startswith("ok rec stop"):
-            break
-        if text.startswith("ESPREC1_ERR"):
-            raise ProtocolError(text)
+    _wait_ack("ok rec stop")
 
     frames = grab_spool(port, command="esprec spool", timeout_s=timeout_s)
     if not frames:
         raise ProtocolError("empty spool")
+    if len(frames) > max_frames:
+        frames = frames[:max_frames]
 
     out = Path(path)
     images: list[Image.Image] = []
