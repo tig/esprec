@@ -20,6 +20,15 @@ Unlabeled 320×240 panels captured over USB with `esprec` + ESPREC1 integrity (n
 
 ![scenario](docs/examples/scenario.gif)
 
+### Continuous / realtime session (issue #3)
+
+Device samples the shadow into **RAM if it holds the full session**, else **SPIFFS flash**, without base64 during capture. Host later runs `esprec spool` and builds a GIF with real `ts_ms` delays (~5 Hz living UI on ESP32).
+
+```text
+esprec spool --port COMx --duration 3 --hz 5 -o live.gif
+# wire: esprec rec start 5 3 → …UI samples… → esprec rec stop → esprec spool
+```
+
 Reproduce on a flashed Xuss-C (GCU scenario lives in the product repo):
 
 ```text
