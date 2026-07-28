@@ -24,15 +24,11 @@ Unlabeled 320×240 panels captured over USB with `esprec` + ESPREC1 integrity (n
 
 Device samples the shadow into **RAM if it holds the full session**, else **SPIFFS flash**, without base64 during capture. Host later runs `esprec spool` and builds a GIF with real `ts_ms` delays (~5 Hz living UI on ESP32). Continuous store is quarter-res (80×60) so SPIFFS can keep up; shown below upscaled nearest-neighbor to 320×240 for README readability.
 
-**Living face @ ~5 Hz** (metal, Xuss-C / M5GO — banner motion between samples):
+**Living face @ ~5 Hz** (metal, Xuss-C / M5GO — play the GIF; single stills look almost identical at quarter-res):
 
 ![living realtime](docs/examples/xuss-c-living-realtime-320.gif)
 
 Native 80×60 stream (same delays): [xuss-c-living-realtime.gif](docs/examples/xuss-c-living-realtime.gif)
-
-| first | mid | last |
-|-------|-----|------|
-| ![t0](docs/examples/living_realtime_00.png) | ![mid](docs/examples/living_realtime_mid.png) | ![last](docs/examples/living_realtime_last.png) |
 
 ```text
 esprec spool --port COMx --duration 3 --hz 5 -o docs/examples/xuss-c-living-realtime.gif

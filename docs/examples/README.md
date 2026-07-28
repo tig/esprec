@@ -15,11 +15,12 @@ Unlabeled acceptance stills and **realtime rec/spool** GIFs from a real M5GO-cla
 
 ## Continuous living face (rec → spool, ~5 Hz)
 
+Judge motion from the **GIF**, not stills — quarter-res frames of a slowly scrolling banner look nearly identical one-by-one.
+
 | File | Content |
 |------|---------|
 | `xuss-c-living-realtime.gif` | Native 80×60 store (device sample rate) |
 | `xuss-c-living-realtime-320.gif` | Same frames, NN-upscaled to 320×240 for README |
-| `living_realtime_00.png` / `_mid` / `_last` | First / mid / last stills from that session |
 
 ```text
 esprec spool --port COMx --duration 3 --hz 5 -o docs/examples/xuss-c-living-realtime.gif
