@@ -12,7 +12,7 @@ Requirements only. Specs live under [`specs/`](specs/).
 
 | Spec | Scope |
 |------|--------|
-| [specs/spec.md](specs/spec.md) | Product requirements (Rev 0.4) |
+| [specs/spec.md](specs/spec.md) | Product requirements (Rev 0.4.1) |
 | [specs/ci.md](specs/ci.md) | CI: unit → QEMU ([tobozo/esp32-qemu-sim](https://github.com/tobozo/esp32-qemu-sim)) → optional metal |
 
 ## Shape (planned)

@@ -1,6 +1,6 @@
 # esprec — requirements
 
-**Rev 0.4 · July 2026**
+**Rev 0.4.1 · July 2026**
 
 **esprec** is the [tuirec](https://github.com/tui-cs/tuirec) *analogue* for **ESP32-class devices with screens** — same job (agent eyes on a UI), **not** a port of tuirec’s architecture or CLI model. It lets hosts — especially AI agents working on [Silico](https://github.com/tig/silico) GCUs — **see what is on the device display** without a camera pointed at the panel.
 
@@ -137,10 +137,11 @@ USB serial is a **shared, often cooked** channel (logs, identity, deploy chatter
 ### 6.1 Requirements
 
 1. **Text-safe payload on cooked consoles** — Frame bytes must not rely on a raw binary stream that line-ending conversion or log interleaving can corrupt. A text-safe encoding of the raster (e.g. base64 with a clear header) is acceptable and preferred for v1 over bare RGB565 on stdout.
-2. **Structured header** — Before payload: at least width, height, pixel format, payload byte length (decoded size), and a checksum/CRC of the decoded raster. Host must fail closed if length or checksum fails.
-3. **Recoverable amid logs** — Captures are delimited so the host can resync if ESP log lines appear around (not preferably inside) a capture. Concurrent log noise during payload emit must be suppressed, or interleaving must be detectable as failure.
-4. **Documented pixel packing** — Host decode must use the same packing the producer used (RGB565 endian/swap, RGB888 order, stride). A wrong swap looks like a theme bug; treat that as a protocol/host defect.
-5. **Honest timeouts** — Full-panel captures at common baud rates take seconds; defaults and docs must say so.
+2. **Structured header** — Before payload: at least width, height, pixel format (including packing/endian identity), payload byte length (decoded size), and an integrity check. Host must fail closed if length or integrity check fails.
+3. **Integrity covers metadata + raster** — The checksum/CRC (or equivalent) must bind **both** the frame metadata and the decoded raster, not the raster alone. Corrupting a header field into another syntactically valid value (e.g. swapping width/height with the same pixel count, or flipping an RGB565 byte-order token) while leaving length and a pixels-only checksum unchanged produces wrong-color or wrong-geometry images that this section intends to reject. Implementations may either (a) include a canonical encoding of width/height/format/packing/length in the checksum input with the raster bytes, or (b) protect those fields with a separate authenticated header check that the host always verifies before decode. Wire layout remains an open decision (§12); this integrity *property* is normative.
+4. **Recoverable amid logs** — Captures are delimited so the host can resync if ESP log lines appear around (not preferably inside) a capture. Concurrent log noise during payload emit must be suppressed, or interleaving must be detectable as failure.
+5. **Documented pixel packing** — Host decode must use the same packing the producer used (RGB565 endian/swap, RGB888 order, stride). A wrong swap looks like a theme bug; treat that as a protocol/host defect.
+6. **Honest timeouts** — Full-panel captures at common baud rates take seconds; defaults and docs must say so.
 
 ### 6.2 Pipeline before product
 
@@ -148,7 +149,7 @@ If a PNG/GIF disagrees with what a human sees on the live panel:
 
 1. **Suspect the capture pipeline first**, not the product UI.
 2. Keep intermediate artifacts (raw/decoded frame, CRC, serial log).
-3. A green CLI exit and a file that “looks like an image” are not enough — validate dimensions, checksum, and that the frame is not a known corruption pattern when possible.
+3. A green CLI exit and a file that “looks like an image” are not enough — validate dimensions, packing, integrity over **metadata + raster** (§6.1), and that the frame is not a known corruption pattern when possible.
 
 Agents must not rewrite product domain code to “fix” a yellow bar that was really a cooked-serial shift.
 
@@ -224,7 +225,7 @@ esprec is meeting its mission when:
 
 These are deliberately unresolved at requirements level:
 
-- Exact serial framing / versioning scheme (header fields beyond §6.1 minimum; text-safe encoding choice).
+- Exact serial framing / versioning scheme (byte layout, text-safe encoding choice). §6.1 already requires which *properties* the header and integrity check must protect.
 - Host implementation language (tuirec is Go; Silico spine is Python — pick later for fit).
 - Whether continuous mode is host-paced “poll N times/sec” vs device-paced stream (both can satisfy §5.2).
 - Chunking / compression for large panels and low-RAM parts.
@@ -247,7 +248,7 @@ These are deliberately unresolved at requirements level:
 
 Order: **unit first**, then **QEMU**. Both required for merge once the QEMU example exists. Cloud CI does not require a serial desk board.
 
-Unit fixtures **should** include at least one case that would fail if the host assumed a raw binary stream without length/CRC (integrity of the protocol decoder), so “file exists” cannot pass for truncated payloads.
+Unit fixtures **should** include at least: (1) a case that fails if the host assumed a raw binary stream without length/integrity (truncated payloads must not yield a silent image), and (2) a case that fails if header metadata is altered to another valid-looking value while a pixels-only checksum would still pass (§6.1 item 3).
 
 ---
 
@@ -257,7 +258,8 @@ Drawn from real metal capture work on a Silico C GCU (shadow RGB565 over USB ser
 
 | Lesson | Spec implication |
 |--------|------------------|
-| Cooked serial line-ending conversion corrupts any `0x0A` in RGB565 and invents solid color bands / off-center UI | §6.1 text-safe payload + header/CRC |
+| Cooked serial line-ending conversion corrupts any `0x0A` in RGB565 and invents solid color bands / off-center UI | §6.1 text-safe payload + header/integrity |
+| Header field flipped to another valid value (swap W/H, wrong packing token) with pixels unchanged | §6.1 integrity covers metadata + raster |
 | Concurrent ESP_LOG during dump interleaves garbage into the payload | §6.1 delimit + hush or detect interleaving |
 | Agents treated capture artifacts as product face bugs | §6.2 pipeline before product |
 | Continuous full-rate capture is expensive at 115200 baud | §5.2 honest caps; keyframe style first-class |
