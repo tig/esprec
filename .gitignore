@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.egg-info/
+.eggs/
+dist/
+build/
+.venv/
+venv/
+*.png
+*.gif
+!docs/examples/
+!docs/examples/**
+.capture/
+.silico/

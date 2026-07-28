@@ -1,33 +1,91 @@
 # esprec
 
-**ESP32 screen capture for agents** — the [tuirec](https://github.com/tui-cs/tuirec) *analogue* for devices with displays (same job: eyes on a UI; **not** a clone of tuirec’s pipeline).
+**ESP32 screen capture for agents** — the [tuirec](https://github.com/tui-cs/tuirec) *analogue* for devices with displays (mission kinship, not a port of tuirec’s pipeline).
 
-On command, on-device firmware captures the framebuffer (raw, shadow buffer, or [LVGL](https://lvgl.io) snapshot) and sends **frame bytes** over USB serial. The **host** post-processes those frames into **PNG** (still) or **GIF** (sequence). GIF encoding is not done on the metal.
+On command, product firmware emits a full-frame shadow over USB serial (text-safe base64). The **host** post-processes frames into **PNG** (still) or **GIF** (keyframe or continuous sequence). Primary audience: **AI agents** working on [Silico](https://github.com/tig/silico) GCUs.
 
-Primary audience: **AI agents**, not humans — especially [Silico](https://github.com/tig/silico) GCU agents that need to *see* the product face without a camera.
+## Hero: real metal (Xuss-C / M5GO)
+
+Unlabeled 320×240 panels captured over USB with `esprec` + ESPREC1 integrity (not a desk camera). Banner, themes, and Details firmware line are product pixels.
+
+| Idle (blue) | Theme (orange) | Theme (red) | Details |
+|-------------|----------------|-------------|---------|
+| ![idle blue](docs/examples/01_idle_blue.png) | ![orange](docs/examples/02_theme_orange.png) | ![red](docs/examples/02b_theme_red.png) | ![details](docs/examples/03_details.png) |
+
+**Keyframe sequence** (product stills only):
+
+![xuss-c screens](docs/examples/xuss-c-screens.gif)
+
+**Narrative GIF** (captions padded *above* the panel — never over product chrome):
+
+![scenario](docs/examples/scenario.gif)
+
+Reproduce on a flashed Xuss-C (GCU scenario lives in the product repo):
+
+```text
+# from tig/xuss-c (requires: pip install -e ../esprec)
+python tools/screen_scenario.py --port COMx -o docs/examples
+# optional captions *above* the panel for demos:
+python tools/screen_scenario.py --port COMx -o docs/examples --gif-captions
+```
+
+Library (preferred over re-assembling grab + encode in product scripts):
+
+```python
+from esprec.serial_port import open_port
+from esprec.capture import snapshot, record
+
+ser = open_port("COM7")
+try:
+    snapshot(ser, "face.png", command="shot", settle_s=1.0)
+finally:
+    ser.close()
+```
 
 ## Status
 
-Requirements only. Specs live under [`specs/`](specs/).
+Implemented host CLI + ESPREC1 protocol + ESP-IDF component + unit gate. Specs under [`specs/`](specs/).
 
-| Spec | Scope |
-|------|--------|
-| [specs/spec.md](specs/spec.md) | Product requirements (Rev 0.4.1) |
-| [specs/ci.md](specs/ci.md) | CI: unit → QEMU ([tobozo/esp32-qemu-sim](https://github.com/tobozo/esp32-qemu-sim)) → optional metal |
-
-## Shape (planned)
+## Install (host)
 
 ```text
-device UI ──► capture pixels ──► USB serial ──► host frames ──► PNG / GIF (host post-process)
+python -m pip install -e ".[dev]"
+esprec agent-guide
+esprec snapshot --fake -o face.png    # offline
+esprec snapshot --port COMx -o face.png
+esprec record --port COMx --frames 5 --hz 2 -o clip.gif
 ```
 
-**GIF styles (host):**
+**Named unit gate:**
 
-- **Keyframe / step** — frames only at settled steps → timelapse of states  
-- **Session / continuous** — N frames/sec for a duration → movie-like session  
+```text
+python -m pytest -q
+```
 
-**Transport honesty:** captures must survive cooked serial (framing, checksum, text-safe payload). A pretty PNG that does not match the live panel is a pipeline failure first, not a product UI rewrite.
+## Wire (ESPREC1)
+
+```text
+Host →  esprec shot\n   (alias: shot\n)
+Dev  →  ESPREC1 w=… h=… fmt=rgb565be pack=spi_be enc=b64 nbytes=N crc=0x…
+Dev  →  base64 lines (76 cols)
+Dev  →  ESPREC1_END crc=0x…
+```
+
+CRC32 covers **canonical metadata + raster** (fails closed on truncate, **overlong**, metadata tamper, or **missing end delimiter**). Legacy `SHOT` (pixels-only CRC) is still accepted for older firmware.
+
+## On-device component
+
+```text
+component/esprec/   # idf_component_register; include esprec.h
+esprec_emit_rgb565_spi_be(shadow, w, h);
+```
+
+Products maintain a full-frame **shadow** (panel GRAM readback not required). See `specs/spec.md`.
+
+## Silico
+
+PNG/GIF is **agent evidence**. Operator **product face** confirm remains required for first-ship metal. Do not redefine GCU `sim/` as QEMU. Detail: silico `knowledge/esprec.md`.
 
 ## License
 
-TBD until first implementation lands.
+Apache-2.0 (aligned with silico).
