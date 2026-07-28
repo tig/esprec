@@ -105,6 +105,8 @@ def grab_frame(
     b64_parts: list[str] = []
     raw = bytearray()
     enc = meta.enc
+    saw_end = False
+    end_prefixes = ("ESPREC1_END", "SHOT_END")
 
     if enc in ("b64", "base64"):
         while time.monotonic() < deadline:
@@ -114,12 +116,18 @@ def grab_frame(
                     break
                 continue
             text = line.decode("utf-8", errors="replace").strip()
-            if text.startswith("ESPREC1_END") or text.startswith("SHOT_END"):
+            if text.startswith(end_prefixes):
+                saw_end = True
                 break
             if text.startswith("ESPREC1") or text.startswith("SHOT"):
                 continue
             if B64_LINE_RE.fullmatch(text):
                 b64_parts.append(text)
+        if not saw_end:
+            raise ProtocolError(
+                "missing ESPREC1_END/SHOT_END delimiter after payload "
+                "(timeout or incomplete frame)"
+            )
         raw = bytearray(decode_b64_payload(b64_parts))
     else:
         while len(raw) < meta.nbytes and time.monotonic() < deadline:
@@ -131,8 +139,14 @@ def grab_frame(
             if not line:
                 continue
             t = line.decode("utf-8", errors="replace").strip()
-            if t.startswith("ESPREC1_END") or t.startswith("SHOT_END"):
+            if t.startswith(end_prefixes):
+                saw_end = True
                 break
+        if not saw_end:
+            raise ProtocolError(
+                "missing ESPREC1_END/SHOT_END delimiter after payload "
+                "(timeout or incomplete frame)"
+            )
 
     raster = verify_and_extract(meta, bytes(raw))
     return meta, raster

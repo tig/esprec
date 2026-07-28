@@ -40,6 +40,16 @@ def test_truncated_payload_fails_closed():
         verify_and_extract(meta, raster[:10])
 
 
+def test_overlong_payload_fails_closed():
+    """Extra bytes after declared nbytes (interleave class) must not trim-pass."""
+    w, h = 8, 4
+    raster = solid_rgb565_spi_be(w, h, 0, 255, 0)
+    header, _, _ = build_esprec1_frame(w, h, raster)
+    meta = parse_header_line(header)
+    with pytest.raises(ProtocolError, match="overlong"):
+        verify_and_extract(meta, raster + b"\x00\x01")
+
+
 def test_metadata_tamper_fails_even_if_pixels_crc_would_pass():
     """Normative 6.1: integrity covers metadata + raster.
 

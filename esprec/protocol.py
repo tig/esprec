@@ -129,13 +129,20 @@ def decode_b64_payload(parts: list[str]) -> bytes:
 
 
 def verify_and_extract(meta: FrameMeta, raster: bytes) -> bytes:
-    """Fail closed on length / integrity; return exact nbytes raster."""
+    """Fail closed on length / integrity; return exact nbytes raster.
+
+    Over-length payloads (extra base64 after the declared raster, e.g. log
+    interleaving decoded as more pixels) fail closed — do not silently trim.
+    """
     if len(raster) < meta.nbytes:
         raise ProtocolError(
             f"truncated payload: got {len(raster)} want {meta.nbytes}"
         )
     if len(raster) > meta.nbytes:
-        raster = raster[: meta.nbytes]
+        raise ProtocolError(
+            f"overlong payload: got {len(raster)} want {meta.nbytes} "
+            f"(interleave or length mismatch — fail closed)"
+        )
     expected = meta.w * meta.h * 2
     if meta.fmt == FMT_RGB565BE and meta.nbytes != expected:
         raise ProtocolError(

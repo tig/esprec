@@ -4,9 +4,33 @@
 
 On command, product firmware emits a full-frame shadow over USB serial (text-safe base64). The **host** post-processes frames into **PNG** (still) or **GIF** (keyframe or continuous sequence). Primary audience: **AI agents** working on [Silico](https://github.com/tig/silico) GCUs.
 
+## Hero: real metal (Xuss-C / M5GO)
+
+Unlabeled 320×240 panels captured over USB with `esprec` + ESPREC1 integrity (not a desk camera). Banner, themes, and Details firmware line are product pixels.
+
+| Idle (blue) | Theme (orange) | Theme (red) | Details |
+|-------------|----------------|-------------|---------|
+| ![idle blue](docs/examples/01_idle_blue.png) | ![orange](docs/examples/02_theme_orange.png) | ![red](docs/examples/02b_theme_red.png) | ![details](docs/examples/03_details.png) |
+
+**Keyframe sequence** (product stills only):
+
+![xuss-c screens](docs/examples/xuss-c-screens.gif)
+
+**Narrative GIF** (captions padded *above* the panel — never over product chrome):
+
+![scenario](docs/examples/scenario.gif)
+
+Reproduce on a flashed Xuss-C (or any GCU with the esprec component + shadow FB):
+
+```text
+python scripts/xuss_c_screen_scenario.py --port COMx --outdir docs/examples
+# optional captions above panel for demos:
+python scripts/xuss_c_screen_scenario.py --port COMx --outdir docs/examples --gif-captions
+```
+
 ## Status
 
-Implemented host CLI + protocol + ESP-IDF component + unit gate. Specs under [`specs/`](specs/).
+Implemented host CLI + ESPREC1 protocol + ESP-IDF component + unit gate. Specs under [`specs/`](specs/).
 
 ## Install (host)
 
@@ -33,7 +57,7 @@ Dev  →  base64 lines (76 cols)
 Dev  →  ESPREC1_END crc=0x…
 ```
 
-CRC32 covers **canonical metadata + raster** (fails closed on truncate or metadata tamper). Legacy `SHOT` (pixels-only CRC) is still accepted for older firmware.
+CRC32 covers **canonical metadata + raster** (fails closed on truncate, **overlong**, metadata tamper, or **missing end delimiter**). Legacy `SHOT` (pixels-only CRC) is still accepted for older firmware.
 
 ## On-device component
 

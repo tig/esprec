@@ -81,23 +81,25 @@ def cmd_snapshot(args: argparse.Namespace) -> int:
 
 def cmd_record(args: argparse.Namespace) -> int:
     out = Path(args.output)
+    n = max(1, int(args.frames))
     if args.fake:
         from esprec.pixels import solid_rgb565_spi_be
         from esprec.protocol import build_esprec1_frame
 
+        # Cycle solid colors so --frames N is honored offline (not a fixed 3).
+        palette = [(255, 0, 0), (0, 255, 0), (0, 0, 255), (255, 255, 0)]
         frames_wire = []
-        for i, color in enumerate([(255, 0, 0), (0, 255, 0), (0, 0, 255)]):
+        for i in range(n):
+            color = palette[i % len(palette)]
             r = solid_rgb565_spi_be(16, 12, *color)
             frames_wire.append(build_esprec1_frame(16, 12, r))
         port = FakeDevicePort(frames_wire)
-        n = len(frames_wire)
         settle = 0.0
     else:
         if not args.port:
             print("error: --port required (or --fake)", file=sys.stderr)
             return 2
         port = _open_serial(args.port, args.baud)
-        n = args.frames
         settle = args.settle
 
     period = 1.0 / args.hz if args.hz > 0 else 0.5
