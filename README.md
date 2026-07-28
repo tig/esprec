@@ -20,12 +20,26 @@ Unlabeled 320×240 panels captured over USB with `esprec` + ESPREC1 integrity (n
 
 ![scenario](docs/examples/scenario.gif)
 
-Reproduce on a flashed Xuss-C (or any GCU with the esprec component + shadow FB):
+Reproduce on a flashed Xuss-C (GCU scenario lives in the product repo):
 
 ```text
-python scripts/xuss_c_screen_scenario.py --port COMx --outdir docs/examples
-# optional captions above panel for demos:
-python scripts/xuss_c_screen_scenario.py --port COMx --outdir docs/examples --gif-captions
+# from tig/xuss-c (requires: pip install -e ../esprec)
+python tools/screen_scenario.py --port COMx -o docs/examples
+# optional captions *above* the panel for demos:
+python tools/screen_scenario.py --port COMx -o docs/examples --gif-captions
+```
+
+Library (preferred over re-assembling grab + encode in product scripts):
+
+```python
+from esprec.serial_port import open_port
+from esprec.capture import snapshot, record
+
+ser = open_port("COM7")
+try:
+    snapshot(ser, "face.png", command="shot", settle_s=1.0)
+finally:
+    ser.close()
 ```
 
 ## Status

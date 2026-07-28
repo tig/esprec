@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PIL import Image
+from PIL import Image, ImageDraw
+
+# Rows *above* the panel for narrative captions — never over product chrome.
+CAPTION_PAD = 18
 
 
 def save_png(img: Image.Image, path: str | Path) -> Path:
@@ -37,13 +40,16 @@ def save_gif(
     return path
 
 
-def label_frame(img: Image.Image, caption: str) -> Image.Image:
-    """Optional host-side caption bar for keyframe GIFs."""
-    from PIL import ImageDraw
+def caption_above(img: Image.Image, caption: str, *, pad: int = CAPTION_PAD) -> Image.Image:
+    """Narrative bar *outside* the panel — does not overwrite product chrome.
 
-    out = img.copy().convert("RGB")
+    Pastes the panel at y=pad so hair banner / Details identity (y≈0..18 of
+    the 320×240 face) stay intact. Prefer this over any in-panel caption bar.
+    """
+    rgb = img.convert("RGB")
+    w, h = rgb.size
+    out = Image.new("RGB", (w, h + pad), (0, 0, 0))
+    out.paste(rgb, (0, pad))
     draw = ImageDraw.Draw(out)
-    bar_h = 16
-    draw.rectangle([0, 0, out.width, bar_h], fill=(0, 0, 0))
     draw.text((4, 2), caption[:48], fill=(255, 255, 255))
     return out

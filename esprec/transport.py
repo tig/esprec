@@ -25,7 +25,11 @@ class BytePort(Protocol):
 
 
 class FakeDevicePort:
-    """In-process device that answers ``esprec shot`` / ``shot`` with canned frames."""
+    """In-process device that answers ``esprec shot`` / ``shot`` with canned frames.
+
+    Same contract as a real serial port: empty ``readline`` means "no data yet"
+    (caller waits until timeout). Does not require special-casing in grab_frame.
+    """
 
     def __init__(self, frames: list[tuple[str, list[str], str]]):
         """frames: list of (header, b64_lines, end_line)."""
@@ -69,15 +73,26 @@ class FakeDevicePort:
         pass
 
 
+def _cmd_bytes(command: bytes | str) -> bytes:
+    if isinstance(command, bytes):
+        return command if command.endswith(b"\n") else command + b"\n"
+    s = command if command.endswith("\n") else command + "\n"
+    return s.encode()
+
+
 def grab_frame(
     port: BytePort,
     *,
     timeout_s: float = 90.0,
-    command: bytes = b"esprec shot\n",
+    command: bytes | str = b"esprec shot\n",
 ) -> tuple[FrameMeta, bytes]:
-    """Request one frame; return meta + verified raster bytes."""
+    """Request one frame; return meta + verified raster bytes.
+
+    Empty readline is treated as "no data yet" until the deadline (same for
+    real serial and FakeDevicePort). Missing ESPREC1_END/SHOT_END fails closed.
+    """
     port.reset_input_buffer()
-    port.write(command)
+    port.write(_cmd_bytes(command))
     port.flush()
     deadline = time.monotonic() + timeout_s
     meta: FrameMeta | None = None
@@ -85,9 +100,6 @@ def grab_frame(
     while time.monotonic() < deadline:
         line = port.readline()
         if not line:
-            # FakeDevice returns empty when idle; real serial may block on timeout.
-            if isinstance(port, FakeDevicePort):
-                continue
             continue
         text = line.decode("utf-8", errors="replace").strip()
         if not text:
@@ -112,8 +124,6 @@ def grab_frame(
         while time.monotonic() < deadline:
             line = port.readline()
             if not line:
-                if isinstance(port, FakeDevicePort) and not port._out:
-                    break
                 continue
             text = line.decode("utf-8", errors="replace").strip()
             if text.startswith(end_prefixes):

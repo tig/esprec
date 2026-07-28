@@ -12,3 +12,5 @@ Unlabeled acceptance stills from a real M5GO-class board (ESP32 / COM USB serial
 | `scenario.gif` | Same stills with optional captions **above** the panel |
 
 Do not draw host captions over y=0..17 of the panel (hair / Details identity).
+Use `esprec.image_out.caption_above` or `--gif-captions` on the **xuss-c**
+`tools/screen_scenario.py` driver (not an esprec product script).

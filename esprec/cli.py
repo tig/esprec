@@ -1,73 +1,37 @@
-"""Agent-first CLI: esprec snapshot | record | help."""
+"""Agent-first CLI: thin wrapper over esprec.capture + esprec.serial_port."""
 
 from __future__ import annotations
 
 import argparse
 import sys
-import time
-from pathlib import Path
 
 from esprec import __version__
-from esprec.image_out import label_frame, save_gif, save_png
-from esprec.pixels import raster_to_image
+from esprec.capture import make_fake_port, record, snapshot
 from esprec.protocol import ProtocolError
-from esprec.transport import FakeDevicePort, grab_frame
+from esprec.serial_port import open_port
 
 
-def _open_serial(port: str, baud: int):
-    try:
-        import serial
-    except ImportError as e:
-        print("pyserial required: pip install pyserial", file=sys.stderr)
-        raise SystemExit(2) from e
-    # Set DTR/RTS low *before* open so Windows/ESP auto-reset does not reboot
-    # the board (which leaves a black/unpainted shadow on early shot).
-    ser = serial.Serial()
-    ser.port = port
-    ser.baudrate = baud
-    ser.timeout = 0.5
-    ser.dsrdtr = False
-    ser.rtscts = False
-    ser.dtr = False
-    ser.rts = False
-    ser.open()
-    ser.dtr = False
-    ser.rts = False
-    return ser
+def _port_for_args(args: argparse.Namespace, *, n_frames: int = 1):
+    if args.fake:
+        return make_fake_port(n_frames), 0.0
+    if not args.port:
+        print("error: --port required (or --fake for offline)", file=sys.stderr)
+        raise SystemExit(2)
+    return open_port(args.port, args.baud), float(args.settle)
 
 
 def cmd_snapshot(args: argparse.Namespace) -> int:
-    out = Path(args.output)
-    if args.fake:
-        from esprec.pixels import solid_rgb565_spi_be
-        from esprec.protocol import build_esprec1_frame
-
-        w, h = 32, 24
-        raster = solid_rgb565_spi_be(w, h, 0, 0, 255)
-        frame = build_esprec1_frame(w, h, raster)
-        port = FakeDevicePort([frame])
-        settle = 0.0
-    else:
-        if not args.port:
-            print("error: --port required (or --fake for offline)", file=sys.stderr)
-            return 2
-        port = _open_serial(args.port, args.baud)
-        settle = args.settle
-
+    port, settle = _port_for_args(args, n_frames=1)
     try:
-        if settle:
-            time.sleep(settle)
-        meta, raster = grab_frame(
+        meta = snapshot(
             port,
+            args.output,
+            command=args.command,
             timeout_s=args.timeout,
-            command=args.command.encode() + b"\n"
-            if isinstance(args.command, str)
-            else args.command,
+            settle_s=settle,
         )
-        img = raster_to_image(raster, meta.w, meta.h, meta.fmt, meta.pack)
-        save_png(img, out)
         print(
-            f"OK wrote {out} {meta.w}x{meta.h} ver={meta.version} "
+            f"OK wrote {args.output} {meta.w}x{meta.h} ver={meta.version} "
             f"crc=0x{meta.crc:08x}"
         )
         return 0
@@ -80,53 +44,23 @@ def cmd_snapshot(args: argparse.Namespace) -> int:
 
 
 def cmd_record(args: argparse.Namespace) -> int:
-    out = Path(args.output)
     n = max(1, int(args.frames))
-    if args.fake:
-        from esprec.pixels import solid_rgb565_spi_be
-        from esprec.protocol import build_esprec1_frame
-
-        # Cycle solid colors so --frames N is honored offline (not a fixed 3).
-        palette = [(255, 0, 0), (0, 255, 0), (0, 0, 255), (255, 255, 0)]
-        frames_wire = []
-        for i in range(n):
-            color = palette[i % len(palette)]
-            r = solid_rgb565_spi_be(16, 12, *color)
-            frames_wire.append(build_esprec1_frame(16, 12, r))
-        port = FakeDevicePort(frames_wire)
-        settle = 0.0
-    else:
-        if not args.port:
-            print("error: --port required (or --fake)", file=sys.stderr)
-            return 2
-        port = _open_serial(args.port, args.baud)
-        settle = args.settle
-
-    period = 1.0 / args.hz if args.hz > 0 else 0.5
-    images = []
+    port, settle = _port_for_args(args, n_frames=n)
     try:
-        if settle:
-            time.sleep(settle)
-        cmd = (
-            args.command.encode() + b"\n"
-            if isinstance(args.command, str)
-            else args.command
+        metas = record(
+            port,
+            args.output,
+            frames=n,
+            hz=args.hz,
+            command=args.command,
+            timeout_s=args.timeout,
+            settle_s=settle,
+            save_frame_pngs=args.save_frames,
+            caption_prefix=args.caption_prefix or "",
         )
-        for i in range(n):
-            t0 = time.monotonic()
-            meta, raster = grab_frame(port, timeout_s=args.timeout, command=cmd)
-            img = raster_to_image(raster, meta.w, meta.h, meta.fmt, meta.pack)
-            if args.caption_prefix:
-                img = label_frame(img, f"{args.caption_prefix}{i}")
-            if args.save_frames:
-                stem = out.with_suffix("")
-                save_png(img, Path(f"{stem}_{i:03d}.png"))
-            images.append(img)
+        for i, meta in enumerate(metas):
             print(f"OK frame {i} {meta.w}x{meta.h}")
-            elapsed = time.monotonic() - t0
-            time.sleep(max(0.0, period - elapsed))
-        save_gif(images, out, duration_ms=int(period * 1000))
-        print(f"OK wrote {out} ({len(images)} frames @ {args.hz} Hz)")
+        print(f"OK wrote {args.output} ({len(metas)} frames @ {args.hz} Hz)")
         return 0
     except ProtocolError as e:
         print(f"error: {e}", file=sys.stderr)
@@ -145,14 +79,19 @@ On-device half embeds in product firmware; this CLI is the host half.
 
 Commands:
   esprec snapshot --port COMx -o face.png
-  esprec snapshot --fake -o /tmp/fake.png          # offline unit path
+  esprec snapshot --fake -o face.png
   esprec record --port COMx --frames 5 --hz 2 -o clip.gif
-  esprec record --fake -o /tmp/fake.gif
+  esprec record --fake --frames 3 -o clip.gif
+
+Library (preferred for product scripts):
+  from esprec.serial_port import open_port
+  from esprec.capture import snapshot, record
 
 Device must answer: `esprec shot` or `shot` with ESPREC1 (preferred) or SHOT.
 
-Integrity: ESPREC1 CRC covers metadata + raster. Truncated or
-metadata-mismatched frames fail closed (non-zero exit).
+Integrity: ESPREC1 CRC covers metadata + raster. Truncated, overlong, or
+metadata-mismatched frames fail closed. Captions (if any) are drawn *above*
+the panel — never over product chrome.
 
 Pipeline before product: if PNG disagrees with the glass, fix capture first.
 PNG/GIF is agent evidence — operator product-face confirm remains for first ship.
@@ -195,7 +134,11 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--command", default="esprec shot")
     r.add_argument("--fake", action="store_true")
     r.add_argument("--save-frames", action="store_true")
-    r.add_argument("--caption-prefix", default="")
+    r.add_argument(
+        "--caption-prefix",
+        default="",
+        help="optional captions *above* each panel (never over product pixels)",
+    )
     r.set_defaults(func=cmd_record)
 
     return p
