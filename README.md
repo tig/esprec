@@ -22,31 +22,40 @@ Unlabeled 320×240 panels captured over USB with `esprec` + ESPREC1 integrity (n
 
 ### Continuous / realtime session (issue #3)
 
-Device samples the shadow into **RAM if it holds the full session**, else **SPIFFS flash**, without base64 during capture. Host later runs `esprec spool` and builds a GIF with real `ts_ms` delays (~5 Hz living UI on ESP32).
+Device samples the shadow into **RAM if it holds the full session**, else **SPIFFS flash**, without base64 during capture. Host later runs `esprec spool` and builds a GIF with real `ts_ms` delays (~5 Hz living UI on ESP32). Continuous store is quarter-res (80×60) so SPIFFS can keep up; shown below upscaled nearest-neighbor to 320×240 for README readability.
+
+**Living face @ ~5 Hz** (metal, Xuss-C / M5GO — banner motion between samples):
+
+![living realtime](docs/examples/xuss-c-living-realtime-320.gif)
+
+Native 80×60 stream (same delays): [xuss-c-living-realtime.gif](docs/examples/xuss-c-living-realtime.gif)
+
+| first | mid | last |
+|-------|-----|------|
+| ![t0](docs/examples/living_realtime_00.png) | ![mid](docs/examples/living_realtime_mid.png) | ![last](docs/examples/living_realtime_last.png) |
 
 ```text
-esprec spool --port COMx --duration 3 --hz 5 -o live.gif
-# wire: esprec rec start 5 3 → …UI samples… → esprec rec stop → esprec spool
+esprec spool --port COMx --duration 3 --hz 5 -o docs/examples/xuss-c-living-realtime.gif
+# wire: esprec rec start 5 3 [max] → …UI samples… → esprec rec stop → esprec spool
 ```
 
-Reproduce on a flashed Xuss-C (GCU scenario lives in the product repo):
+Keyframe storyboard re-record (product repo):
 
 ```text
 # from tig/xuss-c (requires: pip install -e ../esprec)
-python tools/screen_scenario.py --port COMx -o docs/examples
-# optional captions *above* the panel for demos:
-python tools/screen_scenario.py --port COMx -o docs/examples --gif-captions
+python tools/demo_record.py --port COMx -o docs/demo --captions
 ```
 
-Library (preferred over re-assembling grab + encode in product scripts):
+Library:
 
 ```python
 from esprec.serial_port import open_port
-from esprec.capture import snapshot, record
+from esprec.capture import snapshot, spool_to_gif
 
 ser = open_port("COM7")
 try:
     snapshot(ser, "face.png", command="shot", settle_s=1.0)
+    spool_to_gif(ser, "live.gif", duration_s=3.0, hz=5.0)
 finally:
     ser.close()
 ```
