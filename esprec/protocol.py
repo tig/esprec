@@ -25,8 +25,16 @@ from dataclasses import dataclass
 ESPREC_HEADER_RE = re.compile(
     r"^ESPREC1\s+w=(?P<w>\d+)\s+h=(?P<h>\d+)\s+fmt=(?P<fmt>\S+)\s+"
     r"pack=(?P<pack>\S+)\s+enc=(?P<enc>\S+)\s+nbytes=(?P<nbytes>\d+)\s+"
-    r"crc=(?P<crc>0x[0-9A-Fa-f]+)\s*$"
+    r"crc=(?P<crc>0x[0-9A-Fa-f]+)"
+    r"(?:\s+seq=(?P<seq>\d+))?(?:\s+ts_ms=(?P<ts_ms>\d+))?\s*$"
 )
+
+ESPREC_REC_START_RE = re.compile(
+    r"^ESPREC1_REC\s+frames=(?P<frames>\d+)\s+storage=(?P<storage>\S+)\s+"
+    r"interval_ms=(?P<interval_ms>\d+)(?:\s+w=(?P<w>\d+)\s+h=(?P<h>\d+))?\s*$"
+)
+
+ESPREC_REC_END_RE = re.compile(r"^ESPREC1_REC_END\s+frames=(?P<frames>\d+)\s*$")
 
 # Legacy xuss-c field protocol (pixels-only CRC).
 SHOT_HEADER_RE = re.compile(
@@ -56,6 +64,8 @@ class FrameMeta:
     nbytes: int
     crc: int
     version: str  # "esprec1" | "shot"
+    seq: int | None = None
+    ts_ms: int | None = None
 
 
 def canonical_meta_prefix(
@@ -77,12 +87,26 @@ def crc_pixels_only(raster: bytes) -> int:
 
 
 def format_esprec1_header(
-    w: int, h: int, fmt: str, pack: str, enc: str, nbytes: int, crc: int
+    w: int,
+    h: int,
+    fmt: str,
+    pack: str,
+    enc: str,
+    nbytes: int,
+    crc: int,
+    *,
+    seq: int | None = None,
+    ts_ms: int | None = None,
 ) -> str:
-    return (
+    base = (
         f"ESPREC1 w={w} h={h} fmt={fmt} pack={pack} enc={enc} "
         f"nbytes={nbytes} crc=0x{crc:08x}"
     )
+    if seq is not None:
+        base += f" seq={seq}"
+    if ts_ms is not None:
+        base += f" ts_ms={ts_ms}"
+    return base
 
 
 def parse_header_line(text: str) -> FrameMeta:
@@ -99,6 +123,8 @@ def parse_header_line(text: str) -> FrameMeta:
             nbytes=int(d["nbytes"]),
             crc=int(d["crc"], 16),
             version="esprec1",
+            seq=int(d["seq"]) if d.get("seq") else None,
+            ts_ms=int(d["ts_ms"]) if d.get("ts_ms") else None,
         )
     m = SHOT_HEADER_RE.match(text)
     if m:
@@ -180,10 +206,14 @@ def build_esprec1_frame(
     *,
     fmt: str = FMT_RGB565BE,
     pack: str = PACK_SPI_BE,
+    seq: int | None = None,
+    ts_ms: int | None = None,
 ) -> tuple[str, list[str], str]:
     """Return (header_line, b64_lines, end_line) for a synthetic device."""
     nbytes = len(raster)
     crc = crc_esprec1(w, h, fmt, pack, nbytes, raster)
-    header = format_esprec1_header(w, h, fmt, pack, "b64", nbytes, crc)
+    header = format_esprec1_header(
+        w, h, fmt, pack, "b64", nbytes, crc, seq=seq, ts_ms=ts_ms
+    )
     end = f"ESPREC1_END crc=0x{crc:08x}"
     return header, encode_b64_lines(raster), end

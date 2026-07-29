@@ -6,7 +6,7 @@ import argparse
 import sys
 
 from esprec import __version__
-from esprec.capture import make_fake_port, record, snapshot
+from esprec.capture import make_fake_port, record, snapshot, spool_to_gif
 from esprec.protocol import ProtocolError
 from esprec.serial_port import open_port
 
@@ -70,6 +70,40 @@ def cmd_record(args: argparse.Namespace) -> int:
             port.close()
 
 
+def cmd_spool(args: argparse.Namespace) -> int:
+    """Device-side continuous record then spool → realtime-delay GIF."""
+    if args.fake:
+        print(
+            "error: --fake does not simulate device rec/spool; use metal or unit tests",
+            file=sys.stderr,
+        )
+        return 2
+    if not args.port:
+        print("error: --port required", file=sys.stderr)
+        return 2
+    port = open_port(args.port, args.baud)
+    try:
+        metas = spool_to_gif(
+            port,
+            args.output,
+            duration_s=args.duration,
+            hz=args.hz,
+            settle_s=args.settle,
+            timeout_s=args.timeout,
+            save_frame_pngs=args.save_frames,
+        )
+        print(
+            f"OK wrote {args.output} ({len(metas)} frames @ ~{args.hz} Hz device sample)"
+        )
+        return 0
+    except ProtocolError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 1
+    finally:
+        if hasattr(port, "close"):
+            port.close()
+
+
 def cmd_agent_guide(_: argparse.Namespace) -> int:
     print(
         f"""esprec {__version__} — agent eyes on ESP32 screens
@@ -80,17 +114,16 @@ On-device half embeds in product firmware; this CLI is the host half.
 Commands:
   esprec snapshot --port COMx -o face.png
   esprec snapshot --fake -o face.png
-  esprec record --port COMx --frames 5 --hz 2 -o clip.gif
-  esprec record --fake --frames 3 -o clip.gif
+  esprec record --port COMx --frames 5 --hz 2 -o clip.gif   # host-paced (slow)
+  esprec spool --port COMx --duration 3 --hz 5 -o live.gif  # device rec→spool (smooth)
 
-Library (preferred for product scripts):
+Library:
   from esprec.serial_port import open_port
-  from esprec.capture import snapshot, record
+  from esprec.capture import snapshot, record, spool_to_gif
 
-Device must answer: `esprec shot` or `shot` with ESPREC1 (preferred) or SHOT.
+Device: `shot` | `esprec rec start <hz> <sec>` | `esprec rec stop` | `esprec spool`.
 
-Integrity: ESPREC1 CRC covers metadata + raster. Truncated, overlong, or
-metadata-mismatched frames fail closed. Captions (if any) are drawn *above*
+Integrity: ESPREC1 CRC covers metadata + raster. Captions (if any) are *above*
 the panel — never over product chrome.
 
 Pipeline before product: if PNG disagrees with the glass, fix capture first.
@@ -140,6 +173,21 @@ def build_parser() -> argparse.ArgumentParser:
         help="optional captions *above* each panel (never over product pixels)",
     )
     r.set_defaults(func=cmd_record)
+
+    sp = sub.add_parser(
+        "spool",
+        help="device multi-frame rec then spool → GIF (realtime delays)",
+    )
+    sp.add_argument("--port", default=None)
+    sp.add_argument("--baud", type=int, default=115200)
+    sp.add_argument("-o", "--output", default="spool.gif")
+    sp.add_argument("--duration", type=float, default=3.0, help="seconds to sample")
+    sp.add_argument("--hz", type=float, default=5.0, help="device sample rate")
+    sp.add_argument("--settle", type=float, default=0.3)
+    sp.add_argument("--timeout", type=float, default=600.0)
+    sp.add_argument("--save-frames", action="store_true")
+    sp.add_argument("--fake", action="store_true")
+    sp.set_defaults(func=cmd_spool)
 
     return p
 
