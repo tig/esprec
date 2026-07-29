@@ -12,6 +12,11 @@ Simply tell your coding agent:
 
 > "Use tig/esprec to capture an image of my device after boot and add it to my repos README.md as a hero image."
 
+### Agent course correction
+
+> AGENT: "I just flashed the device with new UI. How does it look? Does it match the spec?"
+> HUMAN: "use tig/esprec to see for yourself."
+
 ### Screen validation as part of continuous integration testing
 
 > "Use tig/esprec to create goldens of feature x, y, and z. Then build tests that run as part of CI that fail if the firmware running on qemu ever deviates from the goldens."
