@@ -44,6 +44,8 @@ The agent installs the host tool, links the on-device component, and runs captur
 
 Native 80×60 stream (same delays): [xuss-c-living-realtime.gif](docs/examples/xuss-c-living-realtime.gif)
 
+**Re-record heroes** (metal Xuss-C + esprec host): see [docs/examples/README.md](docs/examples/README.md) and `scripts/xuss_c_*.py`.
+
 ---
 
 ## How it works (Deep dive)
@@ -106,11 +108,13 @@ esprec spool --port COMx --duration 3 --hz 5 -o docs/examples/xuss-c-living-real
 # wire: esprec rec start 5 3 [max] → …UI samples… → esprec rec stop → esprec spool
 ```
 
-Keyframe storyboard re-record (product repo):
+Keyframe / living re-record (Xuss-C product scenarios in this repo):
 
 ```text
-# from tig/xuss-c (requires: pip install -e ../esprec)
-python tools/demo_record.py --port COMx -o docs/demo --captions
+# from esprec checkout (requires: pip install -e ".[dev]"; metal running Xuss-C)
+python scripts/xuss_c_screen_scenario.py --port COMx -o docs/examples
+python scripts/xuss_c_demo_record.py --port COMx -o docs/examples --captions
+esprec spool --port COMx --duration 3 --hz 5 -o docs/examples/xuss-c-living-realtime.gif
 ```
 
 ### Specs
