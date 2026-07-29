@@ -80,47 +80,13 @@ def _cmd_bytes(command: bytes | str) -> bytes:
     return s.encode()
 
 
-def grab_frame(
-    port: BytePort,
-    *,
-    timeout_s: float = 90.0,
-    command: bytes | str = b"esprec shot\n",
-) -> tuple[FrameMeta, bytes]:
-    """Request one frame; return meta + verified raster bytes.
-
-    Empty readline is treated as "no data yet" until the deadline (same for
-    real serial and FakeDevicePort). Missing ESPREC1_END/SHOT_END fails closed.
-    """
-    port.reset_input_buffer()
-    port.write(_cmd_bytes(command))
-    port.flush()
-    deadline = time.monotonic() + timeout_s
-    meta: FrameMeta | None = None
-
-    while time.monotonic() < deadline:
-        line = port.readline()
-        if not line:
-            continue
-        text = line.decode("utf-8", errors="replace").strip()
-        if not text:
-            continue
-        if text.startswith("ESPREC1_ERR") or text.startswith("SHOT_ERR"):
-            raise ProtocolError(text)
-        try:
-            meta = parse_header_line(text)
-            break
-        except ProtocolError:
-            continue  # log noise
-    if meta is None:
-        raise ProtocolError("timeout waiting for frame header")
-
+def _read_payload(port: BytePort, meta: FrameMeta, deadline: float) -> bytes:
     b64_parts: list[str] = []
     raw = bytearray()
-    enc = meta.enc
     saw_end = False
     end_prefixes = ("ESPREC1_END", "SHOT_END")
 
-    if enc in ("b64", "base64"):
+    if meta.enc in ("b64", "base64"):
         while time.monotonic() < deadline:
             line = port.readline()
             if not line:
@@ -157,6 +123,117 @@ def grab_frame(
                 "missing ESPREC1_END/SHOT_END delimiter after payload "
                 "(timeout or incomplete frame)"
             )
+    return verify_and_extract(meta, bytes(raw))
 
-    raster = verify_and_extract(meta, bytes(raw))
-    return meta, raster
+
+def read_next_frame(
+    port: BytePort,
+    *,
+    deadline: float,
+    skip_until_header: bool = True,
+) -> tuple[FrameMeta, bytes] | None:
+    """Read next ESPREC1/SHOT frame from an open stream (no command).
+
+    Returns None if ESPREC1_REC_END is seen. Raises on ESPREC1_ERR / timeout.
+    """
+    from esprec.protocol import ESPREC_REC_END_RE
+
+    while time.monotonic() < deadline:
+        line = port.readline()
+        if not line:
+            continue
+        text = line.decode("utf-8", errors="replace").strip()
+        if not text:
+            continue
+        if text.startswith("ESPREC1_ERR") or text.startswith("SHOT_ERR"):
+            raise ProtocolError(text)
+        if ESPREC_REC_END_RE.match(text) or text.startswith("ESPREC1_REC_END"):
+            return None
+        if text.startswith("ESPREC1_REC"):
+            continue  # envelope; wait for first frame
+        try:
+            meta = parse_header_line(text)
+        except ProtocolError:
+            if skip_until_header:
+                continue
+            raise
+        raster = _read_payload(port, meta, deadline)
+        return meta, raster
+    raise ProtocolError("timeout waiting for frame header")
+
+
+def grab_frame(
+    port: BytePort,
+    *,
+    timeout_s: float = 90.0,
+    command: bytes | str = b"esprec shot\n",
+) -> tuple[FrameMeta, bytes]:
+    """Request one frame; return meta + verified raster bytes.
+
+    Empty readline is treated as "no data yet" until the deadline (same for
+    real serial and FakeDevicePort). Missing ESPREC1_END/SHOT_END fails closed.
+    """
+    port.reset_input_buffer()
+    port.write(_cmd_bytes(command))
+    port.flush()
+    deadline = time.monotonic() + timeout_s
+    got = read_next_frame(port, deadline=deadline)
+    if got is None:
+        raise ProtocolError("unexpected REC_END on single-shot grab")
+    return got
+
+
+def grab_spool(
+    port: BytePort,
+    *,
+    command: bytes | str = b"esprec spool\n",
+    timeout_s: float = 600.0,
+) -> list[tuple[FrameMeta, bytes]]:
+    """Request multi-frame spool; return list of (meta, raster) in order."""
+    from esprec.protocol import ESPREC_REC_START_RE
+
+    port.reset_input_buffer()
+    port.write(_cmd_bytes(command))
+    port.flush()
+    deadline = time.monotonic() + timeout_s
+    expected: int | None = None
+
+    while time.monotonic() < deadline:
+        line = port.readline()
+        if not line:
+            continue
+        text = line.decode("utf-8", errors="replace").strip()
+        if text.startswith("ESPREC1_ERR"):
+            raise ProtocolError(text)
+        m = ESPREC_REC_START_RE.match(text)
+        if m:
+            expected = int(m.group("frames"))
+            break
+    if expected is None:
+        raise ProtocolError("timeout waiting for ESPREC1_REC header")
+
+    frames: list[tuple[FrameMeta, bytes]] = []
+    while time.monotonic() < deadline:
+        got = read_next_frame(port, deadline=deadline)
+        if got is None:
+            break
+        frames.append(got)
+        if expected is not None and len(frames) >= expected:
+            # drain optional REC_END
+            t_end = time.monotonic() + 2.0
+            while time.monotonic() < t_end:
+                line = port.readline()
+                if not line:
+                    continue
+                if b"REC_END" in line:
+                    break
+            break
+
+    if not frames:
+        raise ProtocolError("spool returned zero frames")
+    if expected is not None and len(frames) != expected:
+        # Prefer partial success over hard fail (device may have auto-capped).
+        # Callers still get real-time ts_ms delays for the frames that arrived.
+        pass
+    return frames
+
