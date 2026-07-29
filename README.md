@@ -15,6 +15,7 @@ Simply tell your coding agent:
 ### Agent course correction
 
 > AGENT: "I just flashed the device with new UI. How does it look? Does it match the spec?"
+
 > HUMAN: "use tig/esprec to see for yourself."
 
 ### Screen validation as part of continuous integration testing
