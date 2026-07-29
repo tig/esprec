@@ -72,36 +72,9 @@ finally:
     ser.close()
 ```
 
-## Status
-
-Implemented host CLI + ESPREC1 protocol + ESP-IDF component + unit gate. Specs under [`specs/`](specs/).
-
-## How an Agent Installs esprec
-
-```text
-python -m pip install -e ".[dev]"
-esprec agent-guide
-esprec snapshot --fake -o face.png    # offline
-esprec snapshot --port COMx -o face.png
-esprec record --port COMx --frames 5 --hz 2 -o clip.gif
-```
-
-## Wire (ESPREC1)
-
-```text
-Host →  esprec shot\n   (alias: shot\n)
-Dev  →  ESPREC1 w=… h=… fmt=rgb565be pack=spi_be enc=b64 nbytes=N crc=0x…
-Dev  →  base64 lines (76 cols)
-Dev  →  ESPREC1_END crc=0x…
-```
-
-CRC32 covers **canonical metadata + raster** (fails closed on truncate, **overlong**, metadata tamper, or **missing end delimiter**). Legacy `SHOT` (pixels-only CRC) is still accepted for older firmware.
-
 ## On-device component
 
 ```text
 component/esprec/   # idf_component_register; include esprec.h
 esprec_emit_rgb565_spi_be(shadow, w, h);
 ```
-
-Products maintain a full-frame **shadow** (panel GRAM readback not required). See `specs/spec.md`.
