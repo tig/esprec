@@ -3,7 +3,8 @@
 
 Lives under esprec/scripts/ (hero stills live in docs/examples/). GCU-domain
 btn sequence + acceptance stills via the public esprec capture API — not a
-private CLI helper.
+private CLI helper. Product inject is intentional here (see scripts/README.md);
+it is not exported from the esprec package.
 
 Acceptance stills are **unlabeled** full 320x240 panel pixels. Optional GIF
 captions are drawn *above* the panel via esprec.image_out.caption_above.
@@ -16,46 +17,20 @@ import sys
 import time
 from pathlib import Path
 
-from PIL import Image
-
 try:
-    from esprec.capture import capture_image
-    from esprec.image_out import caption_above, save_gif, save_png
+    from esprec.image_out import caption_above, save_gif
     from esprec.serial_port import open_port
 except ImportError:
     print(
         "esprec required: pip install -e .  # from esprec checkout\n"
-        "Then: python scripts/xuss_c_screen_scenario.py --port COMx -o capture/",
+        "Then: python scripts/xuss_c_screen_scenario.py --port COMx -o docs/examples",
         file=sys.stderr,
     )
     raise SystemExit(2)
 
-
-def wait_ok(ser, prefix: str = "ok", timeout: float = 3.0) -> str:
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
-        line = ser.readline()
-        if not line:
-            continue
-        text = line.decode("utf-8", errors="replace").strip()
-        if text.startswith(prefix) or text.startswith("err"):
-            return text
-    return ""
-
-
-def btn(ser, which: str, hold: float = 0.45) -> None:
-    ser.reset_input_buffer()
-    ser.write(f"btn {which}\n".encode())
-    ser.flush()
-    wait_ok(ser, "ok btn", timeout=2.0)
-    time.sleep(hold)
-
-
-def snap(ser, path: Path, note: str, timeout: float) -> Image.Image:
-    meta, img = capture_image(ser, command="shot", timeout_s=timeout)
-    save_png(img, path)
-    print(f"OK {path} {meta.w}x{meta.h} crc=0x{meta.crc:08x} — {note}")
-    return img.convert("RGB")
+# Sibling helper (not a package module).
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from xuss_c_product import ScenarioError, btn, snap_png  # noqa: E402
 
 
 def main() -> int:
@@ -88,12 +63,12 @@ def main() -> int:
         time.sleep(args.boot_wait)
         ser.reset_input_buffer()
 
-        panels: list[Image.Image] = []
+        panels = []
         notes: list[str] = []
         for which, path, note in steps:
             if which:
                 btn(ser, which)
-            panels.append(snap(ser, path, note, args.timeout))
+            panels.append(snap_png(ser, path, note, timeout=args.timeout))
             notes.append(note)
 
         # Unlabeled product loop (README keyframe hero).
@@ -109,6 +84,9 @@ def main() -> int:
             save_gif(gif_frames, gif, duration_ms=1200)
             print(f"OK wrote {gif} ({len(gif_frames)} frames, captions above panel)")
         return 0
+    except ScenarioError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 1
     finally:
         ser.close()
 

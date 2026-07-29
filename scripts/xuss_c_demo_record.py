@@ -21,65 +21,20 @@ from pathlib import Path
 from PIL import Image
 
 try:
-    from esprec.capture import capture_image, spool_to_gif
-    from esprec.image_out import caption_above, save_gif, save_png
+    from esprec.capture import spool_to_gif
+    from esprec.image_out import caption_above
     from esprec.serial_port import open_port
 except ImportError:
     print("pip install -e .  # from esprec checkout", file=sys.stderr)
     raise SystemExit(2)
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from xuss_c_product import ScenarioError, btn, snap_png  # noqa: E402
+
 # Playback delays (ms) — tuned for readable state changes, not capture wall time.
 DELAY_STATE_MS = 1100
-DELAY_LIVING_MS = 400
 DELAY_PLAY_MS = 1400
 DELAY_DETAILS_MS = 1300
-
-
-class DemoError(RuntimeError):
-    """Hard fail for demo recording (do not emit misleading labeled frames)."""
-
-
-def wait_ok(ser, prefix: str = "ok", timeout: float = 3.0) -> str:
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
-        line = ser.readline()
-        if not line:
-            continue
-        text = line.decode("utf-8", errors="replace").strip()
-        if text.startswith(prefix) or text.startswith("err"):
-            return text
-    return ""
-
-
-def btn(ser, which: str, hold: float = 0.5) -> None:
-    """Inject button edge; abort if firmware does not acknowledge."""
-    ser.reset_input_buffer()
-    ser.write(f"btn {which}\n".encode())
-    ser.flush()
-    ack = wait_ok(ser, "ok btn", timeout=2.0)
-    if not ack:
-        raise DemoError(f"btn {which}: no acknowledgement (timeout)")
-    if ack.startswith("err"):
-        raise DemoError(f"btn {which}: device replied {ack!r}")
-    time.sleep(hold)
-
-
-def snap(
-    ser,
-    path: Path,
-    note: str,
-    *,
-    timeout: float,
-    delay_ms: int,
-    caption: bool,
-) -> tuple[Image.Image, Image.Image, int]:
-    """Return (product_rgb, gif_frame, delay_ms). product_rgb is never captioned."""
-    meta, img = capture_image(ser, command="shot", timeout_s=timeout)
-    rgb = img.convert("RGB")
-    save_png(rgb, path)
-    print(f"OK {path.name} {meta.w}x{meta.h} delay={delay_ms}ms — {note}")
-    gif_frame = caption_above(rgb, note) if caption else rgb
-    return rgb, gif_frame, delay_ms
 
 
 def main() -> int:
@@ -130,17 +85,11 @@ def main() -> int:
             btn(ser, after_btn, hold=args.hold)
         safe = "".join(c if c.isalnum() or c in "-_" else "_" for c in note)[:48]
         path = out / f"{step:02d}_{safe}.png"
-        product, gif_frame, d = snap(
-            ser,
-            path,
-            note,
-            timeout=args.timeout,
-            delay_ms=delay_ms,
-            caption=args.captions,
-        )
+        product = snap_png(ser, path, note, timeout=args.timeout)
+        gif_frame = caption_above(product, note) if args.captions else product
         product_frames.append(product)
         demo_frames.append(gif_frame)
-        delays.append(d)
+        delays.append(delay_ms)
         step += 1
 
     ser = open_port(args.port, args.baud)
@@ -188,7 +137,7 @@ def main() -> int:
         add("pause via A (no theme change)", DELAY_STATE_MS, after_btn="a")
 
         if not product_frames:
-            raise DemoError("no frames captured")
+            raise ScenarioError("no frames captured")
 
         # Narrative demo GIF (may include captions above panel).
         demo_gif = out / "xuss-c-demo.gif"
@@ -219,7 +168,7 @@ def main() -> int:
             "GIF delays make playback smooth, not capture rate"
         )
         return 0
-    except DemoError as e:
+    except ScenarioError as e:
         print(f"error: {e}", file=sys.stderr)
         return 1
     finally:
