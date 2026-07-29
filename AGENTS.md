@@ -437,7 +437,7 @@ Keep intermediate artifacts (PNG, serial log, CRC lines) when debugging.
 | `docs/examples/` | Real metal stills/GIFs (xuss-c demo) |
 | `examples/synthetic_host/` | Host-buildable C emit for CRC parity |
 
-Reference product integration: [tig/xuss-c](https://github.com/tig/xuss-c) (`tools/demo_record.py`, `tools/shot.py`) — pattern, not a required dependency.
+Reference product scenarios (Xuss-C heroes): `scripts/xuss_c_*.py` + [docs/examples/](docs/examples/). Product firmware stays in [tig/xuss-c](https://github.com/tig/xuss-c) (clean-start main is docs-only).
 
 ---
 
