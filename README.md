@@ -1,12 +1,28 @@
 # esprec
 
-**ESP32 screen capture for agents** — the [tuirec](https://github.com/tui-cs/tuirec) *analogue* for devices with displays (mission kinship, not a port of tuirec’s pipeline).
+**ESP32 screen capture for agents** — For devices with displays. On command, product firmware emits a full-frame shadow over USB serial (text-safe base64). The **host** post-processes frames into **PNG** (still) or **GIF** (keyframe or continuous sequence). Primary audience: **AI agents** working on [Silico](https://github.com/tig/silico) GCUs.
 
-On command, product firmware emits a full-frame shadow over USB serial (text-safe base64). The **host** post-processes frames into **PNG** (still) or **GIF** (keyframe or continuous sequence). Primary audience: **AI agents** working on [Silico](https://github.com/tig/silico) GCUs.
+**esprec** is the ESP32 equivalent of my popular [tuirec](https://github.com/tui-cs/tuirec) which does the same thing for terminal user interfaces.
 
-## Hero: real metal (Xuss-C / M5GO)
+## Getting Started
 
-Unlabeled 320×240 panels captured over USB with `esprec` + ESPREC1 integrity (not a desk camera). Banner, themes, and Details firmware line are product pixels.
+Simply tell your coding agent:
+
+### One time capture
+
+> "Use tig/esprec to capture an image of my device after boot and add it to my repos README.md as a hero image."
+
+### Screen validation as part of continuous integration testing
+
+> "Use tig/esprec to create goldens of feature x, y, and z. Then build tests that run as part of CI that fail if the firmware running on qemu ever deviates from the goldens."
+
+### Iterative UX development
+
+> "./mockup.html is an html mockup of the UI I want on my device. Build this UI using LVGL for real on the device [or qemu emulating my device]. Use tig/esprec to capture each screen as you build it, and iteratively refine the code you write until the real device UI matches the html mockup."
+
+## Example
+
+`xuss-c` is an example used to demonstrate [Silico](https://github.com/tig/silico). `xuss-c` is a M5GO device with a 320×240 display. **esprec** captured these over USB with `esprec` + ESPREC1 integrity (not a desk camera). Banner, themes, and Details firmware line are product pixels.
 
 | Idle (blue) | Theme (orange) | Theme (red) | Details |
 |-------------|----------------|-------------|---------|
@@ -60,7 +76,7 @@ finally:
 
 Implemented host CLI + ESPREC1 protocol + ESP-IDF component + unit gate. Specs under [`specs/`](specs/).
 
-## Install (host)
+## How an Agent Installs esprec
 
 ```text
 python -m pip install -e ".[dev]"
@@ -68,12 +84,6 @@ esprec agent-guide
 esprec snapshot --fake -o face.png    # offline
 esprec snapshot --port COMx -o face.png
 esprec record --port COMx --frames 5 --hz 2 -o clip.gif
-```
-
-**Named unit gate:**
-
-```text
-python -m pytest -q
 ```
 
 ## Wire (ESPREC1)
@@ -95,11 +105,3 @@ esprec_emit_rgb565_spi_be(shadow, w, h);
 ```
 
 Products maintain a full-frame **shadow** (panel GRAM readback not required). See `specs/spec.md`.
-
-## Silico
-
-PNG/GIF is **agent evidence**. Operator **product face** confirm remains required for first-ship metal. Do not redefine GCU `sim/` as QEMU. Detail: silico `knowledge/esprec.md`.
-
-## License
-
-Apache-2.0 (aligned with silico).
