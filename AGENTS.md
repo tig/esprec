@@ -97,7 +97,7 @@ CLI packages that as: `esprec spool --port COMx --duration 3 --hz 5 -o live.gif`
 
 ### 3.4 Product actions (not esprec)
 
-Buttons, navigation, theme toggles, reboot: **product** serial (e.g. `btn a`) or Silico deploy. Keep **one serial session** open for inject + multiple snaps. Reopening with default DTR/RTS can auto-reset ESP and yield black unpainted frames — esprec’s `open_port` deasserts DTR/RTS; do not bypass it with a raw `serial.Serial(port)` open.
+Buttons, navigation, theme toggles, reboot: **product** serial (e.g. `btn a`) or Silico deploy. Keep **one serial session** open for inject + multiple snaps. Reopening can auto-reset ESP and yield black unpainted frames — esprec’s `open_port` picks the control-line policy the host can implement safely (deassert DTR/RTS on Windows, leave the lines alone and clear HUPCL on POSIX); do not bypass it with a raw `serial.Serial(port)` open.
 
 ---
 
@@ -128,7 +128,7 @@ from esprec.serial_port import open_port
 from esprec.capture import snapshot, capture_image, spool_to_gif
 from esprec.image_out import caption_above, save_png, save_gif
 
-ser = open_port("COM7")  # DTR/RTS safe
+ser = open_port("COM7")  # auto-reset safe on Windows and POSIX hosts
 try:
     snapshot(ser, "face.png", command="shot", settle_s=1.0, timeout_s=90.0)
 finally:
@@ -404,7 +404,7 @@ Do **not** claim match from source inspection alone. **Capture is mandatory** ea
 | Baud | 115200 default; full-panel base64 is slow — budget **~15–30 s** for 320×240 stills |
 | Continuous full-rate | Prefer **keyframe** stills for state stories; use `spool` at modest Hz (e.g. 5) and often **quarter-res** rec (`esprec_rec_push_scaled`) so SPIFFS/RAM keeps up |
 | One session | Open once; many `capture_image` / product cmds; then close |
-| Auto-reset | Always `esprec.serial_port.open_port` or CLI (DTR/RTS low) |
+| Auto-reset | Always `esprec.serial_port.open_port` or CLI (automatic per host; override with `ESPREC_CONTROL_LINES` only if needed) |
 | Logs during emit | Device must hush logs or host integrity fails |
 | Windows ports | `COM7` form; macOS/Linux `/dev/tty.usbserial-*` / `/dev/ttyACM*` |
 

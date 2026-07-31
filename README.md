@@ -84,7 +84,7 @@ esprec record --port COMx --frames 5 --hz 2 -o clip.gif
 esprec spool --port COMx --duration 3 --hz 5 -o live.gif
 ```
 
-Full-panel stills @ 115200 take seconds; defaults are honest about that. Prefer one open session for multi-snap scripts (`open_port` keeps DTR/RTS low so ESP auto-reset does not black the first frame).
+Full-panel stills @ 115200 take seconds; defaults are honest about that. Prefer one open session for multi-snap scripts (`open_port` picks the control-line policy that keeps your board from rebooting — see [Auto-reset and DTR/RTS](#auto-reset-and-dtrrts)).
 
 ```python
 from esprec.serial_port import open_port
@@ -97,6 +97,36 @@ try:
 finally:
     ser.close()
 ```
+
+### Auto-reset and DTR/RTS
+
+Opening a serial port can reboot an ESP, which is why `open_port` exists.
+Boards decode the two lines the same way whether the auto-reset circuit is
+discrete (CP210x, CH34x, FTDI) or built into the chip (ESP32-S3/C3/C6/H2):
+`DTR=0` with `RTS=1` means EN low, a reset. The host must never let the lines
+pass through that combination.
+
+Both hosts can hit it, but at opposite moments, so the fix is opposite too:
+
+| Host | Hazard | What `open_port` does |
+|---|---|---|
+| Windows | **close**. The DCB is applied in one step at open, so open is safe, but a session that left the lines asserted drops them on close and the board reboots. That is the black unpainted shadow on the *next* shot | deasserts DTR/RTS, so there is nothing left to drop |
+| POSIX | **open**. The kernel raises both lines together, then pyserial lowers them one at a time, DTR first, straight through the reset combination | leaves the lines alone, and clears HUPCL so close does not drop them either |
+
+This is automatic; there is nothing to configure. Override only if you need to:
+`ESPREC_CONTROL_LINES=keep|deassert` or `open_port(port, control_lines="keep")`.
+
+Measured with a boot counter the firmware keeps in NVS, on M5Stack ATOMS3R and
+Cardputer ADV (native USB) and M5Stack Basic (CP2104 bridge):
+
+| Host | `deassert` | leaving the lines alone |
+|---|---|---|
+| Linux 6.16 | reset at open | no reset |
+| macOS 26.5 | reset at open | no reset |
+| Windows 11 | no reset | reset at close |
+
+On POSIX the bridge board additionally reboots at the *next* open if HUPCL drops
+the lines at close, which is why `open_port` clears it.
 
 ### The on-device component
 
